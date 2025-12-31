@@ -1,0 +1,826 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Nomilog（飲み屋共有マップ）ホットモック</title>
+
+  <!-- Leaflet (OpenStreetMap) : APIキー不要 -->
+  <link
+    rel="stylesheet"
+    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+    crossorigin=""
+  />
+
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
+    body { background: #f3f4f6; color: #111827; }
+
+    header {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 12px 16px; background: #111827; color: #f9fafb;
+    }
+    .logo { font-weight: 800; font-size: 16px; letter-spacing: 0.2px; }
+    .logo small { font-weight: 500; opacity: 0.8; margin-left: 8px; }
+    .header-actions { display: flex; gap: 8px; align-items: center; }
+    button {
+      border: none; border-radius: 999px; padding: 8px 12px;
+      font-size: 12px; cursor: pointer;
+    }
+    button.primary { background: #f97316; color: #fff; font-weight: 700; }
+    button.ghost { background: transparent; border: 1px solid #4b5563; color: #e5e7eb; }
+    button.light { background: #e5e7eb; color: #111827; font-weight: 600; }
+
+    main { display: flex; height: calc(100vh - 52px); }
+
+    .map-area { flex: 2; position: relative; padding: 10px; }
+    #map {
+      width: 100%; height: 100%;
+      border-radius: 14px; overflow: hidden;
+      border: 1px solid #d1d5db;
+      background: #e5e7eb;
+    }
+    .map-hint {
+      position: absolute; top: 18px; left: 18px;
+      background: rgba(17,24,39,0.82);
+      color: #f9fafb; font-size: 11px;
+      padding: 8px 10px; border-radius: 12px;
+      max-width: min(360px, 80vw);
+      line-height: 1.35;
+    }
+
+    .fab {
+      position: absolute; right: 22px; bottom: 22px;
+      background: #f97316; color: #fff;
+      padding: 10px 16px; border-radius: 999px;
+      font-size: 13px; font-weight: 800;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.25);
+      display: flex; align-items: center; gap: 8px;
+    }
+    .fab span { font-size: 18px; line-height: 0; }
+
+    .side { flex: 1; background: #fff; border-left: 1px solid #e5e7eb; padding: 10px; display: flex; flex-direction: column; gap: 10px; }
+    .tabs { display: flex; gap: 6px; }
+    .tab {
+      flex: 1; text-align: center; padding: 8px 0;
+      border-radius: 999px; background: #f3f4f6;
+      font-size: 12px; color: #6b7280; font-weight: 700;
+      cursor: pointer;
+    }
+    .tab.active { background: #111827; color: #f9fafb; }
+
+    .panel {
+      border: 1px solid #e5e7eb; border-radius: 12px;
+      padding: 10px; display: flex; flex-direction: column; gap: 8px;
+      min-height: 0;
+    }
+    .panel-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+    .panel-title { font-size: 12px; font-weight: 800; color: #374151; }
+    .panel-sub { font-size: 11px; color: #9ca3af; }
+
+    .share-btn {
+      font-size: 11px; padding: 6px 10px;
+      border-radius: 999px; border: 1px dashed #9ca3af;
+      background: #f9fafb; cursor: pointer;
+    }
+
+    .list { display: flex; flex-direction: column; gap: 8px; overflow: auto; padding-right: 2px; }
+    .card {
+      border: 1px solid #e5e7eb; border-radius: 12px; padding: 10px;
+      cursor: pointer;
+    }
+    .card:hover { background: #f9fafb; }
+    .row { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+    .name { font-size: 13px; font-weight: 900; color: #111827; }
+    .badge {
+      font-size: 10px; padding: 2px 8px; border-radius: 999px;
+      background: #eef2ff; color: #3730a3; font-weight: 800;
+      white-space: nowrap;
+    }
+    .badge.visited { background: #dcfce7; color: #166534; }
+    .meta { font-size: 11px; color: #6b7280; margin-top: 4px; }
+
+    .empty { font-size: 12px; color: #9ca3af; line-height: 1.4; padding: 6px 2px; }
+
+    /* Modal */
+    .backdrop {
+      position: fixed; inset: 0; background: rgba(15,23,42,0.35);
+      display: none; align-items: center; justify-content: center;
+      z-index: 5000;
+    }
+    .backdrop.show { display: flex; }
+    .modal {
+      width: min(440px, 92vw);
+      background: #fff; border-radius: 16px;
+      padding: 14px 14px 12px;
+      box-shadow: 0 20px 40px rgba(15,23,42,0.35);
+    }
+    .modal-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+    .modal-title { font-size: 14px; font-weight: 900; }
+    .close { border: none; background: transparent; font-size: 18px; cursor: pointer; padding: 2px 6px; border-radius: 999px; }
+
+    .field { display: flex; flex-direction: column; gap: 4px; margin-top: 8px; }
+    label { font-size: 11px; color: #4b5563; font-weight: 700; }
+    input, select, textarea {
+      border: 1px solid #d1d5db; border-radius: 10px;
+      padding: 8px 10px; font-size: 13px; width: 100%;
+    }
+    textarea { min-height: 64px; resize: vertical; }
+    .mini { font-size: 11px; color: #6b7280; line-height: 1.35; }
+
+    .modal-foot { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
+
+    .toast {
+      position: fixed; bottom: 14px; left: 50%; transform: translateX(-50%);
+      background: #111827; color: #f9fafb; font-size: 12px;
+      padding: 10px 14px; border-radius: 999px;
+      display: none; z-index: 6000;
+      max-width: min(520px, 92vw);
+      text-align: center;
+    }
+    .toast.show { display: block; }
+
+    @media (max-width: 860px) {
+      main { flex-direction: column; }
+      .map-area { height: 52vh; }
+      .side { height: calc(48vh - 10px); }
+    }
+
+        /* ===== メモ内リンクの見た目 ===== */
+    .meta a {
+      color: #2563eb;          /* リンクらしい青 */
+      text-decoration: underline;
+      word-break: break-all;   /* 長いURL対策 */
+    }
+
+    .meta a:visited {
+      color: #4f46e5;
+    }
+
+
+  </style>
+</head>
+<body>
+<header>
+  <div class="logo">Nomilog <small>飲み屋共有マップ（ホットモック）</small></div>
+  <div class="header-actions" id="headerActions"></div>
+</header>
+
+<main>
+  <section class="map-area">
+    <div id="map"></div>
+
+    <div class="map-hint" id="mapHint">
+      <div style="font-weight:800; margin-bottom:4px;">使い方（ホットモック）</div>
+      地図をタップすると「追加位置」が決まります。<br>
+      右下の「お店を追加」から登録してください。<br>
+      ※データは localStorage に保存されます。
+    </div>
+
+    <button class="fab" id="openAdd"><span>＋</span>お店を追加</button>
+  </section>
+
+  <aside class="side">
+    <div class="tabs">
+      <div class="tab active" id="tabMy">マイリスト</div>
+      <div class="tab" id="tabAll">みんなのおすすめ</div>
+    </div>
+
+    <section class="panel" id="panelMy">
+      <div class="panel-header">
+        <div>
+          <div class="panel-title">マイ飲み屋リスト</div>
+          <div class="panel-sub">タップで地図へ移動します</div>
+        </div>
+        <button class="share-btn" id="shareBtn">共有リンクをコピー</button>
+      </div>
+      <div class="list" id="myList"></div>
+      <div class="empty" id="myEmpty" style="display:none;">
+        まだお店がありません。地図をタップ→「お店を追加」から登録してください。
+      </div>
+
+      <div style="display:flex; gap:8px; margin-top:4px;">
+        <button class="light" id="resetBtn" style="flex:1;">データ初期化</button>
+        <button class="light" id="seedBtn" style="flex:1;">ダミー再投入</button>
+      </div>
+    </section>
+
+    <section class="panel" id="panelAll" style="display:none;">
+      <div class="panel-header">
+        <div>
+          <div class="panel-title">みんなのおすすめ（ダミー）</div>
+          <div class="panel-sub">検索UIの雰囲気だけ</div>
+        </div>
+      </div>
+
+      <div class="field">
+        <label>キーワード</label>
+        <input placeholder="例：横浜　立ち飲み　静か" />
+      </div>
+
+      <div class="list">
+        <div class="card">
+          <div class="row">
+            <div class="name">野毛の立ち飲み（例）</div>
+            <div class="badge visited">高評価</div>
+          </div>
+          <div class="meta">横浜｜立ち飲み・せんべろ</div>
+        </div>
+        <div class="card">
+          <div class="row">
+            <div class="name">静かに飲めるバー（例）</div>
+            <div class="badge">雰囲気</div>
+          </div>
+          <div class="meta">みなとみらい｜バー</div>
+        </div>
+      </div>
+    </section>
+  </aside>
+</main>
+
+<!-- Add Shop Modal -->
+<div class="backdrop" id="backdrop">
+  <div class="modal">
+    <div class="modal-head">
+      <div class="modal-title">お店を追加</div>
+      <button class="close" id="close">✕</button>
+    </div>
+
+    <div class="mini" id="pickedInfo"></div>
+
+    <div class="field">
+      <label>店名 *</label>
+      <input id="shopName" placeholder="例：〇〇酒場 横浜店">
+    </div>
+
+    <div class="field">
+      <label>エリア / 最寄り *</label>
+      <input id="shopArea" placeholder="例：横浜駅西口 / 野毛 / みなとみらい">
+    </div>
+
+    <div class="field">
+      <label>カテゴリ *</label>
+      <select id="shopCategory">
+        <option value="">選択してください</option>
+        <option>居酒屋</option>
+        <option>立ち飲み</option>
+        <option>バー</option>
+        <option>焼き鳥</option>
+        <option>中華</option>
+        <option>和食</option>
+        <option>その他</option>
+      </select>
+    </div>
+
+    <div class="field">
+      <label>ステータス</label>
+      <select id="shopStatus">
+        <option value="want">行きたい</option>
+        <option value="visited">行った</option>
+      </select>
+    </div>
+
+    <div class="field">
+      <label>メモ</label>
+      <textarea id="shopMemo" placeholder="例：一人でも入りやすい / 0次会向き / 静か"></textarea>
+    </div>
+
+    <div class="modal-foot">
+      <button class="light" id="cancel">キャンセル</button>
+      <button class="primary" id="save">追加</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script
+  src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+  integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+  crossorigin=""
+></script>
+
+<script>
+  // ==========
+  // 設定
+  // ==========
+  const STORAGE_KEY = "nomilog_v1_shops";
+
+  // 横浜駅（ざっくり）
+  const YOKOHAMA_STATION = { lat: 35.466188, lng: 139.622715 };
+
+  // 初期ダミー（位置は「横浜駅近辺～みなとみらい」付近に散らしています）
+  const DEFAULT_SEED = [
+    { id: crypto.randomUUID(), name: "ハイボール横丁（ダミー）", area: "横浜駅西口", category: "居酒屋", status: "visited", memo: "0次会に便利", lat: 35.4669, lng: 139.6205 },
+    { id: crypto.randomUUID(), name: "立ち飲み 〇〇（ダミー）", area: "横浜駅きた西口", category: "立ち飲み", status: "want", memo: "一人でも入りやすい", lat: 35.4682, lng: 139.6222 },
+    { id: crypto.randomUUID(), name: "Bar Dummy（ダミー）", area: "みなとみらい", category: "バー", status: "want", memo: "静かめ", lat: 35.4584, lng: 139.6316 },
+    { id: crypto.randomUUID(), name: "焼き鳥 △△（ダミー）", area: "野毛", category: "焼き鳥", status: "visited", memo: "串がうまい（想定）", lat: 35.4526, lng: 139.6307 }
+  ];
+
+  // ==========
+  // 状態
+  // ==========
+  let isLoggedIn = false; // ホットモックなのでダミー
+  let shops = loadShops();
+  let map, pickedLatLng = null;
+  let editingShopId = null;
+  
+
+  // Leaflet markers
+  const markerById = new Map();
+
+  // ==========
+  // DOM
+  // ==========
+  const headerActions = document.getElementById("headerActions");
+
+  const tabMy = document.getElementById("tabMy");
+  const tabAll = document.getElementById("tabAll");
+  const panelMy = document.getElementById("panelMy");
+  const panelAll = document.getElementById("panelAll");
+
+  const myList = document.getElementById("myList");
+  const myEmpty = document.getElementById("myEmpty");
+
+  const openAdd = document.getElementById("openAdd");
+  const backdrop = document.getElementById("backdrop");
+  const closeBtn = document.getElementById("close");
+  const cancelBtn = document.getElementById("cancel");
+  const saveBtn = document.getElementById("save");
+
+  const pickedInfo = document.getElementById("pickedInfo");
+  const shopName = document.getElementById("shopName");
+  const shopArea = document.getElementById("shopArea");
+  const shopCategory = document.getElementById("shopCategory");
+  const shopStatus = document.getElementById("shopStatus");
+  const shopMemo = document.getElementById("shopMemo");
+
+  const shareBtn = document.getElementById("shareBtn");
+  const toast = document.getElementById("toast");
+
+  const resetBtn = document.getElementById("resetBtn");
+  const seedBtn = document.getElementById("seedBtn");
+
+  // ==========
+  // 初期化
+  // ==========
+  initHeader();
+  initTabs();
+  initMap();
+  renderList();
+  ensureSeedIfEmpty();
+
+  // ==========
+  // Map
+  // ==========
+  function linkify(text) {
+  if (!text) return "";
+
+  const urlRegex = /(https?:\/\/[^\s]+)/g;
+  return text.replace(urlRegex, (url) => {
+    return `<a href="${url}" target="_blank" rel="noopener noreferrer">${url}</a>`;
+  });
+}
+
+
+  function initMap() {
+    map = L.map("map", { zoomControl: true }).setView([YOKOHAMA_STATION.lat, YOKOHAMA_STATION.lng], 15);
+
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      maxZoom: 19,
+      attribution: '&copy; OpenStreetMap contributors'
+    }).addTo(map);
+
+    // 既存店舗ピンを描画
+    shops.forEach(addOrUpdateMarker);
+
+    // 地図タップで追加位置を指定（ホットモック：簡単）
+    map.on("click", (e) => {
+      pickedLatLng = e.latlng;
+      showToast(`追加位置を選択しました（${pickedLatLng.lat.toFixed(5)}, ${pickedLatLng.lng.toFixed(5)}）`);
+      updatePickedInfo();
+    });
+  }
+
+  function addOrUpdateMarker(shop) {
+    const title = `${shop.name}\n${shop.area}｜${shop.category}`;
+
+    if (markerById.has(shop.id)) {
+      const mk = markerById.get(shop.id);
+      mk.setLatLng([shop.lat, shop.lng]);
+      mk.bindPopup(title);
+      return;
+    }
+
+    const mk = L.marker([shop.lat, shop.lng]).addTo(map);
+    mk.bindPopup(title);
+
+    mk.on("click", () => {
+      // ピンを押したら該当カードへフォーカス（視覚的な“つながり”）
+      const card = document.querySelector(`[data-shop-id="${shop.id}"]`);
+      if (card) card.scrollIntoView({ behavior: "smooth", block: "center" });
+    });
+
+    markerById.set(shop.id, mk);
+  }
+
+  function removeMarker(shopId) {
+    const mk = markerById.get(shopId);
+    if (!mk) return;
+    mk.remove();
+    markerById.delete(shopId);
+  }
+
+  // ==========
+  // UI (Header / Tabs)
+  // ==========
+  function initHeader() {
+    renderHeader();
+  }
+
+  function renderHeader() {
+    headerActions.innerHTML = "";
+
+    if (!isLoggedIn) {
+      const btn = document.createElement("button");
+      btn.className = "ghost";
+      btn.textContent = "ログイン（ダミー）";
+      btn.onclick = () => {
+        isLoggedIn = true;
+        renderHeader();
+        showToast("ログイン状態に切り替えました（ホットモック）");
+      };
+      headerActions.appendChild(btn);
+      return;
+    }
+
+    const name = document.createElement("div");
+    name.style.fontSize = "12px";
+    name.style.fontWeight = "700";
+    name.textContent = "ユーザー：Kazuki（ダミー）";
+
+    const logout = document.createElement("button");
+    logout.className = "ghost";
+    logout.textContent = "ログアウト";
+    logout.onclick = () => {
+      isLoggedIn = false;
+      renderHeader();
+      showToast("ログアウトしました（ホットモック）");
+    };
+
+    headerActions.appendChild(name);
+    headerActions.appendChild(logout);
+  }
+
+  function initTabs() {
+    tabMy.onclick = () => {
+      tabMy.classList.add("active");
+      tabAll.classList.remove("active");
+      panelMy.style.display = "flex";
+      panelAll.style.display = "none";
+    };
+
+    tabAll.onclick = () => {
+      tabAll.classList.add("active");
+      tabMy.classList.remove("active");
+      panelMy.style.display = "none";
+      panelAll.style.display = "flex";
+    };
+  }
+
+  // ==========
+  // List
+  // ==========
+  function renderList() {
+    myList.innerHTML = "";
+
+    if (!shops.length) {
+      myEmpty.style.display = "block";
+      return;
+    }
+    myEmpty.style.display = "none";
+
+    // 新しい順
+    const sorted = [...shops].sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0));
+
+    for (const s of sorted) {
+      const card = document.createElement("div");
+      card.className = "card";
+      card.dataset.shopId = s.id;
+
+      const row = document.createElement("div");
+      row.className = "row";
+
+      const name = document.createElement("div");
+      name.className = "name";
+      name.textContent = s.name;
+
+      const badge = document.createElement("div");
+      badge.className = "badge " + (s.status === "visited" ? "visited" : "");
+      badge.textContent = s.status === "visited" ? "行った" : "行きたい";
+
+      row.appendChild(name);
+      row.appendChild(badge);
+
+      const meta = document.createElement("div");
+      meta.className = "meta";
+
+      const memoHtml = s.memo ? `｜${linkify(s.memo)}` : "";
+      meta.innerHTML = `${s.area}｜${s.category}${memoHtml}`;
+
+
+      const actions = document.createElement("div");
+      actions.style.display = "flex";
+      actions.style.gap = "8px";
+      actions.style.marginTop = "8px";
+
+      const go = document.createElement("button");
+      go.className = "light";
+      go.textContent = "地図へ";
+      go.style.flex = "1";
+      go.onclick = (ev) => {
+        ev.stopPropagation();
+        map.setView([s.lat, s.lng], 17, { animate: true });
+        const mk = markerById.get(s.id);
+        if (mk) mk.openPopup();
+      };
+
+      const edit = document.createElement("button");
+      edit.className = "light";
+      edit.textContent = "編集";
+      edit.style.flex = "1";
+      edit.onclick = (ev) => {
+        ev.stopPropagation();
+        openEditModal(s.id);
+      };
+
+      const del = document.createElement("button");
+      del.className = "light";
+      del.textContent = "削除";
+      del.style.flex = "1";
+      del.onclick = (ev) => {
+        ev.stopPropagation();
+        deleteShop(s.id);
+      };
+
+      actions.appendChild(go);
+      actions.appendChild(edit);
+      actions.appendChild(del);
+
+
+      card.appendChild(row);
+      card.appendChild(meta);
+      card.appendChild(actions);
+
+      card.onclick = () => {
+        map.setView([s.lat, s.lng], 17, { animate: true });
+        const mk = markerById.get(s.id);
+        if (mk) mk.openPopup();
+      };
+
+      myList.appendChild(card);
+    }
+  }
+
+  function deleteShop(id) {
+    const before = shops.length;
+    shops = shops.filter(s => s.id !== id);
+    if (shops.length === before) return;
+
+    saveShops();
+    removeMarker(id);
+    renderList();
+    showToast("削除しました");
+  }
+
+  // ==========
+  // Modal (Add Shop)
+  // ==========
+
+  function openEditModal(shopId) {
+    const s = shops.find(x => x.id === shopId);
+    if (!s) return;
+
+    editingShopId = shopId;
+    pickedLatLng = L.latLng(s.lat, s.lng);
+
+    // 入力欄に既存値を反映
+    shopName.value = s.name ?? "";
+    shopArea.value = s.area ?? "";
+    shopCategory.value = s.category ?? "";
+    shopStatus.value = s.status ?? "want";
+    shopMemo.value = s.memo ?? "";
+
+    // 表示文言を編集用に
+    document.querySelector(".modal-title").textContent = "お店を編集";
+    saveBtn.textContent = "更新";
+
+    updatePickedInfo();
+    backdrop.classList.add("show");
+
+    // 編集対象へ地図移動（任意）
+    map.setView([s.lat, s.lng], 17, { animate: true });
+    const mk = markerById.get(s.id);
+    if (mk) mk.openPopup();
+  }
+
+
+  openAdd.onclick = () => {
+    openModal();
+  };
+  closeBtn.onclick = closeModal;
+  cancelBtn.onclick = closeModal;
+  backdrop.onclick = (e) => {
+    if (e.target === backdrop) closeModal();
+  };
+
+  function openModal() {
+    if (!pickedLatLng) {
+      // 初回は横浜駅に仮置き
+      pickedLatLng = L.latLng(YOKOHAMA_STATION.lat, YOKOHAMA_STATION.lng);
+    }
+    updatePickedInfo();
+    backdrop.classList.add("show");
+  }
+
+  function closeModal() {
+    backdrop.classList.remove("show");
+
+    // 編集状態を解除して表示を元に戻す
+    if (editingShopId) {
+      editingShopId = null;
+      document.querySelector(".modal-title").textContent = "お店を追加";
+      saveBtn.textContent = "追加";
+    }
+  }
+
+
+  function updatePickedInfo() {
+    if (!pickedLatLng) {
+      pickedInfo.textContent = "追加位置：未選択（地図をタップしてください）";
+      return;
+    }
+    pickedInfo.textContent = `追加位置：${pickedLatLng.lat.toFixed(5)}, ${pickedLatLng.lng.toFixed(5)}（地図タップで変更できます）`;
+  }
+  saveBtn.onclick = () => {
+    const name = shopName.value.trim();
+    const area = shopArea.value.trim();
+    const category = shopCategory.value;
+
+    if (!name || !area || !category) {
+      showToast("必須項目（店名 / エリア / カテゴリ）を入力してください");
+      return;
+    }
+    if (!pickedLatLng) {
+      showToast("地図上で追加位置を選択してください");
+      return;
+    }
+
+    // ===== 更新モード =====
+    if (editingShopId) {
+      const idx = shops.findIndex(x => x.id === editingShopId);
+      if (idx < 0) {
+        showToast("編集対象が見つかりませんでした");
+        editingShopId = null;
+        return;
+      }
+
+      shops[idx] = {
+        ...shops[idx],
+        name,
+        area,
+        category,
+        status: shopStatus.value,
+        memo: shopMemo.value.trim(),
+        lat: pickedLatLng.lat,
+        lng: pickedLatLng.lng
+      };
+
+      saveShops();
+      addOrUpdateMarker(shops[idx]);
+      renderList();
+
+      closeModal();
+      showToast("更新しました（localStorageに保存済み）");
+
+      // 入力リセット
+      shopName.value = "";
+      shopArea.value = "";
+      shopCategory.value = "";
+      shopStatus.value = "want";
+      shopMemo.value = "";
+
+      // モーダル表示を元に戻す
+      editingShopId = null;
+      document.querySelector(".modal-title").textContent = "お店を追加";
+      saveBtn.textContent = "追加";
+
+      return;
+    }
+
+    // ===== 追加モード =====
+    const s = {
+      id: crypto.randomUUID(),
+      name,
+      area,
+      category,
+      status: shopStatus.value,
+      memo: shopMemo.value.trim(),
+      lat: pickedLatLng.lat,
+      lng: pickedLatLng.lng,
+      createdAt: Date.now()
+    };
+
+    shops.push(s);
+    saveShops();
+    addOrUpdateMarker(s);
+    renderList();
+
+    closeModal();
+    showToast("追加しました（localStorageに保存済み）");
+
+    // 入力リセット（位置は保持）
+    shopName.value = "";
+    shopArea.value = "";
+    shopCategory.value = "";
+    shopStatus.value = "want";
+    shopMemo.value = "";
+  };
+
+
+  // ==========
+  // Share (dummy)
+  // ==========
+  shareBtn.onclick = async () => {
+    const dummyUrl = "https://nomilog.example.com/u/kazuki";
+    try {
+      await navigator.clipboard.writeText(dummyUrl);
+      showToast("共有リンクをコピーしました（ホットモック用のダミーURL）");
+    } catch {
+      showToast("コピーできませんでした。ダミーURL：" + dummyUrl);
+    }
+  };
+
+  // ==========
+  // Data / Storage
+  // ==========
+  function loadShops() {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (!raw) return [];
+      const parsed = JSON.parse(raw);
+      if (!Array.isArray(parsed)) return [];
+      return parsed;
+    } catch {
+      return [];
+    }
+  }
+
+  function saveShops() {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(shops));
+  }
+
+  function ensureSeedIfEmpty() {
+    if (shops.length > 0) return;
+    shops = DEFAULT_SEED.map(x => ({ ...x, createdAt: Date.now() - Math.floor(Math.random()*1000000) }));
+    saveShops();
+    // markerは initMap 内ですでに shops を描画しているので、ここで追加が必要
+    shops.forEach(addOrUpdateMarker);
+    renderList();
+  }
+
+  resetBtn.onclick = () => {
+    if (!confirm("保存データを初期化します。よろしいですか？")) return;
+    // 全マーカー削除
+    for (const s of shops) removeMarker(s.id);
+    shops = [];
+    saveShops();
+    renderList();
+    showToast("初期化しました");
+  };
+
+  seedBtn.onclick = () => {
+    // 既存を残したままではなく、分かりやすく“入れ替え”にします
+    for (const s of shops) removeMarker(s.id);
+    shops = DEFAULT_SEED.map(x => ({ ...x, id: crypto.randomUUID(), createdAt: Date.now() - Math.floor(Math.random()*1000000) }));
+    saveShops();
+    shops.forEach(addOrUpdateMarker);
+    renderList();
+    map.setView([YOKOHAMA_STATION.lat, YOKOHAMA_STATION.lng], 15);
+    showToast("ダミーを再投入しました");
+  };
+
+  // ==========
+  // Toast
+  // ==========
+  function showToast(msg) {
+    toast.textContent = msg;
+    toast.classList.add("show");
+    clearTimeout(showToast._t);
+    showToast._t = setTimeout(() => toast.classList.remove("show"), 2200);
+  }
+  
+</script>
+</body>
+</html>
